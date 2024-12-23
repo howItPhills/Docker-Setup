@@ -1,0 +1,55 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000" # "HOST_PORT:CONTAINER_PORTmeans: Access container's port 3000 via localhost:3000
+      - "9229:9229" # for debugging
+    develop: #for development
+      watch:
+        - action: sync+restart
+          path: . #watch for changes in this project folder
+          target: /app #this should be linked to the root folder(Must match WORKDIR in Dockerfile) (crucial thing)
+          ignore: #ignore changes in these files
+            - node_modules
+        - action: rebuild # rebuilds the image when package.json changes
+          path: package.json #watch for changes in this file
+    command: #Running command from docker compose is faster than npm run
+      - node
+      - --watch
+      - --inspect=0.0.0.0:9229 # for debugging
+      - --experimental-strip-types #for typescript
+      - ./src/index.ts
+    depends_on:
+      - db # Add this to ensure db starts first
+    environment: # Add database connection details
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/mydb
+
+  db: # Add the database service
+    image: postgres:13-alpine
+    container_name: postgres-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=mydb
+    ports:
+      - "5432:5432"
+    volumes:
+      #declared from root service volume usage
+      - postgres_data:/var/lib/postgresql/data #Creates a volume for the data on the host machine(my pc for example) and links it to the database folder that stores the data (if something crashes on database side, the data is duplicated to my pc and db container can access it and recover)
+volumes: # Add volumes section
+  #volume declaration
+  postgres_data:
+#docker compose up --watch - must have
+
+#Сетап дб(postgres) с орм(prisma) и докером(должен быть установлен и запущен):
+#1)Dockerfile - описываем инструкции для создания image с приложением (копирование папок для приложения в контейнер)
+#2)docker-compose.yaml - описываем сервисы (для приложения - дописываем порты, переменные окружения, путь к файлу для билда, вотчер и тд, для базы данных - имедж для установки, переменные окружения(пароль, юзер, название дб), волюмсы для сохранения данных и тд).
+#3)npx prisma init - создает папку со схемой (и в дальнейшем с миграциями). Заполняем файл prisma.schema необходимой структурой таблиц и данными для коннекта к дб (DATABASE_URL, название базы данных  и др)
+#4)npx prisma generate - запустить 1 раз и проверить на валидацию схем таблиц. (далее во время миграции будет вызываться автоматически)
+#4)docker compose build - 1 раз при сетапе билдим новые имеджы (для приложения и для дб на основе docker-compose файла). ОБЯЗАТЕЛЬНО в существующий проект с докером, в который ВВОДИТСЯ prisma (контейнеру нужно доустановить новые депенденсис из package.json)
+#5)docker compose up --watch - создаем images и запускаем контейнеры (для приложения и для дб) (для вотчера обязательно, чтобы в Dockerfile WORKDIR совпадала с атрибутом target в docker-compose файле)
+#6)docker compose run app npx prisma migrate dev --name init - мигрируем созданные схемы в базу (инициализационная миграция)
+#7)docker exec -it postgres-db-test psql -U postgres -d mydatabase Для доступа к базе данных из командой строки:
+#-U postgres - имя юзера(задано в environment в compose файле в сервисе дб),
+#-d mydatabase (написано в самом конце DATABASE_URL в compose файле в сервисе апп),
+#postgres-db - имя контейнера.
